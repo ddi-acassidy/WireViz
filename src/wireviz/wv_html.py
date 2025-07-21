@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, List, Union
 
+from jinja2 import FileSystemLoader
+
 from wireviz import APP_NAME, APP_URL, __version__, wv_colors
 from wireviz.DataClasses import Metadata, Options
 from wireviz.svgembed import data_URI_base64
@@ -42,17 +44,21 @@ def generate_html_output(
 
     if templatename:
         # if relative path to template was provided, check directory of YAML file first, fall back to built-in template directory
-        templatefile = smart_file_resolve(
-            f"{templatename}.html", template_search_paths
-        )
+        try:
+            templatefile = smart_file_resolve(
+                f"{templatename}.html", template_search_paths
+            )
+        except Exception:
+            templatefile = smart_file_resolve(
+                templatename, template_search_paths
+            )
     else:
         # fall back to built-in simple template if no template was provided
         templatefile = Path(__file__).parent / "templates/simple.html"
 
     match (metadata.get("template", {}).get("type"), templatefile.suffix):
         case ('jinja', _) | (None, '.jinja'):
-            ...
-            # generate with jinja
+            generate_html_jinja(templatefile, filename, bom_list, metadata, options)
         case ('legacy', _) | (None, _):
             generate_html_legacy(templatefile, filename, bom_list, metadata, options)
         case (ty, _):
@@ -67,18 +73,22 @@ def generate_html_jinja(
         options: Options
 ):
     import jinja2
+    jenv = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(templatefile.parent),
+        autoescape=jinja2.select_autoescape(), trim_blocks=True, lstrip_blocks=True
+    )
     template_text = file_read_text(templatefile)
-    template = jinja2.Template(template_text, autoescape=jinja2.select_autoescape())
+    template = jenv.from_string(template_text)
     result = template.render(
         generator = f"{APP_NAME} {__version__} - {APP_URL}",
         fontname = options.fontname,
         bgcolor = wv_colors.translate_color(options.bgcolor, "hex"),
-        filename = str(filename),
+        filename = filename,
         bom=bom_list,
-        metadata = metadata,
         options = options,
         svg = svgdata(filename),
         data_URI_base64=data_URI_base64,
+        **metadata
     )
     file_write_text(f"{filename}.html", result)
 
