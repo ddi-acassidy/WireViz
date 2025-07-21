@@ -16,16 +16,26 @@ from wireviz.wv_helper import (
 )
 
 
+# embed SVG diagram (only if used)
+def svgdata(filename: str | Path) -> str:
+    return re.sub(  # TODO?: Verify xml encoding="utf-8" in SVG?
+        "^<[?]xml [^?>]*[?]>[^<]*<!DOCTYPE [^>]*>",
+        "<!-- XML and DOCTYPE declarations from SVG file removed -->",
+        file_read_text(f"{filename}.tmp.svg"),
+        1,
+    )
+
+
 def generate_html_output(
-    filename: Union[str, Path],
-    bom_list: List[List[str]],
-    metadata: Metadata,
-    options: Options,
-    source: Union[str, Path] = None,
+        filename: Union[str, Path],
+        bom_list: List[List[str]],
+        metadata: Metadata,
+        options: Options,
+        source: Union[str, Path] = None,
 ):
     # load HTML template
-    templatename = metadata.get("template", {}).get("name")
-    template_search_paths = [ Path(filename).parent, Path(__file__).parent / "templates"]
+    templatename = Path(metadata.get("template", {}).get("name"))
+    template_search_paths = [Path(filename).parent, Path(__file__).parent / "templates"]
 
     if source is not None:
         template_search_paths.insert(0, Path(source).parent)
@@ -39,16 +49,48 @@ def generate_html_output(
         # fall back to built-in simple template if no template was provided
         templatefile = Path(__file__).parent / "templates/simple.html"
 
-    html = file_read_text(templatefile)  # TODO?: Warn if unexpected meta charset?
+    match (metadata.get("template", {}).get("type"), templatefile.suffix):
+        case ('jinja', _) | (None, '.jinja'):
+            ...
+            # generate with jinja
+        case ('legacy', _) | (None, _):
+            generate_html_legacy(templatefile, filename, bom_list, metadata, options)
+        case (ty, _):
+            raise RuntimeError(f'Unknown template type "{ty}"')
 
-    # embed SVG diagram (only if used)
-    def svgdata() -> str:
-        return re.sub(  # TODO?: Verify xml encoding="utf-8" in SVG?
-            "^<[?]xml [^?>]*[?]>[^<]*<!DOCTYPE [^>]*>",
-            "<!-- XML and DOCTYPE declarations from SVG file removed -->",
-            file_read_text(f"{filename}.tmp.svg"),
-            1,
-        )
+
+def generate_html_jinja(
+        templatefile: Path,
+        filename: Union[str, Path],
+        bom_list: List[List[str]],
+        metadata: Metadata,
+        options: Options
+):
+    import jinja2
+    template_text = file_read_text(templatefile)
+    template = jinja2.Template(template_text, autoescape=jinja2.select_autoescape())
+    result = template.render(
+        generator = f"{APP_NAME} {__version__} - {APP_URL}",
+        fontname = options.fontname,
+        bgcolor = wv_colors.translate_color(options.bgcolor, "hex"),
+        filename = str(filename),
+        bom=bom_list,
+        metadata = metadata,
+        options = options,
+        svg = svgdata(filename),
+        data_URI_base64=data_URI_base64,
+    )
+    file_write_text(f"{filename}.html", result)
+
+
+def generate_html_legacy(
+        templatefile: Path,
+        filename: Union[str, Path],
+        bom_list: List[List[str]],
+        metadata: Metadata,
+        options: Options,
+):
+    html = file_read_text(templatefile)  # TODO?: Warn if unexpected meta charset?
 
     # generate BOM table
     bom = flatten2d(bom_list)
@@ -71,13 +113,13 @@ def generate_html_output(
         bom_contents.append(row_html)
 
     bom_html = (
-        '<table class="bom">\n' + bom_header_html + "".join(bom_contents) + "</table>\n"
+            '<table class="bom">\n' + bom_header_html + "".join(bom_contents) + "</table>\n"
     )
     bom_html_reversed = (
-        '<table class="bom">\n'
-        + "".join(list(reversed(bom_contents)))
-        + bom_header_html
-        + "</table>\n"
+            '<table class="bom">\n'
+            + "".join(list(reversed(bom_contents)))
+            + bom_header_html
+            + "</table>\n"
     )
 
     # prepare simple replacements
@@ -101,7 +143,7 @@ def generate_html_output(
         if key in html:
             replacements[key] = func()
 
-    replacement_if_used("<!-- %diagram% -->", svgdata)
+    replacement_if_used("<!-- %diagram% -->", lambda: svgdata(filename))
     replacement_if_used(
         "<!-- %diagram_png_b64% -->", lambda: data_URI_base64(f"{filename}.png")
     )
@@ -114,10 +156,10 @@ def generate_html_output(
             elif isinstance(contents, Dict):  # useful for authors, revisions
                 for index, (category, entry) in enumerate(contents.items()):
                     if isinstance(entry, Dict):
-                        replacements[f"<!-- %{item}_{index+1}% -->"] = str(category)
+                        replacements[f"<!-- %{item}_{index + 1}% -->"] = str(category)
                         for entry_key, entry_value in entry.items():
                             replacements[
-                                f"<!-- %{item}_{index+1}_{entry_key}% -->"
+                                f"<!-- %{item}_{index + 1}_{entry_key}% -->"
                             ] = html_line_breaks(str(entry_value))
                     elif isinstance(entry, (str, int, float)):
                         pass  # TODO?: replacements[f"<!-- %{item}_{category}% -->"] = html_line_breaks(str(entry))

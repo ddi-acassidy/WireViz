@@ -128,12 +128,12 @@ def open_file_append(filename):
     return open(filename, "a", encoding="UTF-8")
 
 
-def file_read_text(filename: str) -> str:
+def file_read_text(filename: str | Path) -> str:
     """Read utf-8 encoded text file, close it, and return the text"""
     return Path(filename).read_text(encoding="utf-8")
 
 
-def file_write_text(filename: str, text: str) -> int:
+def file_write_text(filename: str | Path, text: str) -> int:
     """Write utf-8 encoded text file, close it, and return the number of characters written"""
     return Path(filename).write_text(text, encoding="utf-8")
 

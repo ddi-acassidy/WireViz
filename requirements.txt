@@ -1,5 +1,6 @@
-click
-graphviz
+click~=8.2.1
+graphviz~=0.21
 pillow
-pyyaml
-setuptools
+pyyaml~=6.0.2
+setuptools~=80.9.0
+jinja2
