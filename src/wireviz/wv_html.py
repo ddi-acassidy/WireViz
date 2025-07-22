@@ -27,6 +27,14 @@ def svgdata(filename: str | Path) -> str:
         1,
     )
 
+def svgaspectratio(svg):
+    pattern = r'viewBox\s*=\s*\"\s*?(.*?)\s*?\"'
+    results = re.search(pattern, svg)
+    if results:
+        (x,y,w,h) = (float(segment) for segment in results[1].split(' '))
+        return w / h
+    return 1
+
 
 def generate_html_output(
         filename: Union[str, Path],
@@ -79,6 +87,7 @@ def generate_html_jinja(
     )
     template_text = file_read_text(templatefile)
     template = jenv.from_string(template_text)
+    svg = svgdata(filename)
     result = template.render(
         generator = f"{APP_NAME} {__version__} - {APP_URL}",
         fontname = options.fontname,
@@ -86,7 +95,8 @@ def generate_html_jinja(
         filename = filename,
         bom=bom_list,
         options = options,
-        svg = svgdata(filename),
+        svg = svg,
+        svg_aspect_ratio = svgaspectratio,
         data_URI_base64=data_URI_base64,
         **metadata
     )
